@@ -262,7 +262,7 @@
                 try {
                     // Connect to WebSocket server
                     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                    const wsUrl = `${protocol}//${window.location.host}`;
+                    const wsUrl = `${protocol}//${window.location.protocol === 'https:' ? `https://${window.location.host}` : window.location.host }`;
                     this.ws = new WebSocket(wsUrl);
                     
                     this.ws.onopen = () => {
