@@ -280,6 +280,10 @@
                                 this.hideLoadingMessage();
                                 this.addMessage('客服助理', message.content, 'assistant');
                             }
+                            // Auto focus input when connection is established
+                            setTimeout(() => {
+                                this.messageInput.focus();
+                            }, 300);
                         } catch (error) {
                             console.error('Error parsing message:', error);
                             this.hideLoadingMessage();
