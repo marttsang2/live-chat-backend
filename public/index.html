@@ -103,6 +103,21 @@
             50% { opacity: 0.5; }
             100% { opacity: 1; }
         }
+        .countdown-display {
+            margin-left: auto;
+            font-size: 14px;
+            font-weight: bold;
+            color: #ff6b6b;
+            min-width: 30px;
+            text-align: center;
+            transition: opacity 0.3s ease;
+        }
+        .countdown-display[style*="display: none"] {
+            opacity: 0;
+        }
+        .countdown-display[style*="display: block"] {
+            opacity: 1;
+        }
         .messages {
             flex: 1;
             overflow-y: auto;
@@ -220,13 +235,16 @@
         }
     </style>
 </head>
-  <body>
+<body>
     <div class="chat-widget">
         <button class="chat-toggle minimized" id="chatToggle"></button>
         <div class="chat-container" id="chatContainer">
             <div class="chat-header">
                 <div class="status-dot" id="statusDot"></div>
-                <h3>客服助理</h3>
+                <h3 id="chatTitle">客服助理</h3>
+                <div class="countdown-display" id="countdownDisplay">
+                    <span id="countdownTimer">10</span>
+                </div>
             </div>
             <div id="messages" class="messages"></div>
             <div class="input-container">
@@ -234,7 +252,7 @@
                 <button id="sendButton" disabled></button>
             </div>
         </div>
-    </div></body>
+    </div>
 
     <script>
         class ChatClient {
@@ -246,31 +264,111 @@
                 this.chatToggle = document.getElementById('chatToggle');
                 this.chatContainer = document.getElementById('chatContainer');
                 this.statusDot = document.getElementById('statusDot');
+                this.chatTitle = document.getElementById('chatTitle');
+                this.countdownDisplay = document.getElementById('countdownDisplay');
+                this.countdownTimer = document.getElementById('countdownTimer');
                 this.loadingMessageElement = null;
                 this.isOpen = false;
-                
+                this.idleTimeout = 10000; // 10 seconds total timeout
+                this.idleTimer = null;
+                this.countdownInterval = null;
+                this.isConnected = false;
+                this.isCountdownActive = false;
+                this.remainingIdleTime = this.idleTimeout / 1000; // Convert to seconds
+
                 this.init();
             }
 
             init() {
                 this.setupEventListeners();
-                this.updateStatus(false); // Initialize as disconnected
-                this.connect();
+                this.updateStatus(false);
+                this.connect(); // Initial connection attempt
+            }
+
+            startIdleTimer() {
+                if (this.idleTimer) {
+                    clearTimeout(this.idleTimer);
+                }
+
+                this.remainingIdleTime = this.idleTimeout / 1000; // Reset to 10 seconds
+                this.countdownTimer.textContent = Math.ceil(this.remainingIdleTime);
+                this.countdownDisplay.style.display = 'block'; // Ensure countdown is visible
+
+                this.idleTimer = setTimeout(() => {
+                    console.log('Idle timeout reached, starting countdown');
+                    this.startCountdown();
+                }, 500);
+            }
+
+            startCountdown() {
+                if (this.isCountdownActive) return;
+
+                this.isCountdownActive = true;
+                let countdownTime = 10; // 10 seconds countdown
+                this.countdownTimer.textContent = countdownTime;
+
+                this.countdownInterval = setInterval(() => {
+                    countdownTime--;
+                    this.countdownTimer.textContent = countdownTime;
+
+                    if (countdownTime <= 0) {
+                        this.executeDisconnect();
+                    }
+                }, 1000);
+            }
+
+            stopCountdown() {
+                if (!this.isCountdownActive) return;
+
+                this.isCountdownActive = false;
+                if (this.countdownInterval) {
+                    clearInterval(this.countdownInterval);
+                    this.countdownInterval = null;
+                }
+                this.countdownDisplay.style.display = 'none'; // Hide countdown when stopped
+            }
+
+            executeDisconnect() {
+                this.stopCountdown();
+                this.chatTitle.textContent = '已斷線';
+                console.log('Countdown reached zero, disconnecting WebSocket');
+                if (this.ws) {
+                    this.ws.close();
+                    this.ws = null; // Clear WebSocket reference
+                }
+                this.isConnected = false;
+                this.updateStatus(false);
+                this.messageInput.disabled = true;
+                this.sendButton.disabled = true;
+                this.addMessage('系統', '由於長時間無活動，連線已自動中斷', 'assistant');
+            }
+
+            updateLastActivity() {
+                if (this.isConnected) {
+                    this.stopCountdown();
+                    this.startIdleTimer(); // Restart idle timer
+                }
             }
 
             connect() {
+                if (this.isConnected || this.ws?.readyState === WebSocket.OPEN) {
+                    return; // Avoid creating multiple connections
+                }
+
                 try {
-                    // Connect to WebSocket server
                     const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
                     const wsUrl = `${protocol}${window.location.host}`;
                     this.ws = new WebSocket(wsUrl);
-                    
+
                     this.ws.onopen = () => {
                         console.log('WebSocket connected');
+                        this.isConnected = true;
                         this.updateStatus(true);
+                        this.chatTitle.textContent = '客服助理';
                         this.messageInput.disabled = false;
                         this.sendButton.disabled = false;
                         this.addMessage('系統', '您好！我是客服助理，有什麼可以幫助您的嗎？', 'assistant');
+                        this.updateLastActivity();
                     };
 
                     this.ws.onmessage = (event) => {
@@ -280,7 +378,7 @@
                                 this.hideLoadingMessage();
                                 this.addMessage('客服助理', message.content, 'assistant');
                             }
-                            // Auto focus input when connection is established
+                            this.updateLastActivity();
                             setTimeout(() => {
                                 this.messageInput.focus();
                             }, 300);
@@ -292,21 +390,28 @@
 
                     this.ws.onclose = () => {
                         console.log('WebSocket disconnected');
+                        this.isConnected = false;
                         this.hideLoadingMessage();
                         this.updateStatus(false);
+                        this.chatTitle.textContent = '已斷線';
                         this.messageInput.disabled = true;
                         this.sendButton.disabled = true;
+                        this.stopCountdown();
+                        // No automatic reconnection here
                     };
 
                     this.ws.onerror = (error) => {
                         console.error('WebSocket error:', error);
+                        this.isConnected = false;
                         this.hideLoadingMessage();
                         this.updateStatus(false);
+                        this.chatTitle.textContent = '已斷線';
                     };
-
                 } catch (error) {
                     console.error('Failed to connect:', error);
+                    this.isConnected = false;
                     this.updateStatus(false);
+                    this.chatTitle.textContent = '已斷線';
                 }
             }
 
@@ -317,25 +422,33 @@
 
                 this.sendButton.addEventListener('click', () => {
                     this.sendMessage();
+                    this.updateLastActivity();
                 });
 
                 this.messageInput.addEventListener('keypress', (e) => {
                     if (e.key === 'Enter') {
                         this.sendMessage();
+                        this.updateLastActivity();
                     }
                 });
+
+                document.addEventListener('mousemove', () => this.updateLastActivity());
+                document.addEventListener('keydown', () => this.updateLastActivity());
+                document.addEventListener('click', () => this.updateLastActivity());
             }
 
             toggleChat() {
                 this.isOpen = !this.isOpen;
-                console.log('Toggle chat:', this.isOpen); // Debug log
-                
+                console.log('Toggle chat:', this.isOpen);
+
                 if (this.isOpen) {
                     this.chatContainer.classList.add('open');
                     this.chatToggle.classList.remove('minimized');
                     this.chatToggle.classList.add('maximized');
-                    console.log('Chat opened'); // Debug log
-                    // Focus input when opening
+                    console.log('Chat opened');
+                    if (!this.isConnected) {
+                        this.connect(); // Attempt to connect when opening chat
+                    }
                     setTimeout(() => {
                         if (!this.messageInput.disabled) {
                             this.messageInput.focus();
@@ -345,7 +458,7 @@
                     this.chatContainer.classList.remove('open');
                     this.chatToggle.classList.remove('maximized');
                     this.chatToggle.classList.add('minimized');
-                    console.log('Chat closed'); // Debug log
+                    console.log('Chat closed');
                 }
             }
 
@@ -355,13 +468,9 @@
                     return;
                 }
 
-                // Display user message
                 this.addMessage('您', message, 'user');
-
-                // Show loading animation
                 this.showLoadingMessage();
 
-                // Send to server
                 const messageData = {
                     role: 'user',
                     content: message
@@ -375,7 +484,7 @@
                 const messageDiv = document.createElement('div');
                 messageDiv.className = `message ${type}-message`;
                 messageDiv.innerHTML = `<strong>${sender}:</strong> ${content}`;
-                
+
                 this.messagesContainer.appendChild(messageDiv);
                 this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
             }
@@ -389,19 +498,16 @@
             }
 
             showLoadingMessage() {
-                // Remove existing loading message if any
                 this.hideLoadingMessage();
-                
-                // Disable input and button
+
                 this.messageInput.disabled = true;
                 this.sendButton.disabled = true;
                 this.sendButton.classList.add('loading');
-                
-                // Create loading message element
+
                 this.loadingMessageElement = document.createElement('div');
                 this.loadingMessageElement.className = 'message loading-message';
                 this.loadingMessageElement.innerHTML = '<strong>客服助理:</strong> 正在思考中<span class="loading-dots"></span>';
-                
+
                 this.messagesContainer.appendChild(this.loadingMessageElement);
                 this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
             }
@@ -411,18 +517,16 @@
                     this.loadingMessageElement.parentNode.removeChild(this.loadingMessageElement);
                     this.loadingMessageElement = null;
                 }
-                
-                // Re-enable input and button
-                this.messageInput.disabled = false;
-                this.sendButton.disabled = false;
+
+                this.messageInput.disabled = !this.isConnected;
+                this.sendButton.disabled = !this.isConnected;
                 this.sendButton.classList.remove('loading');
             }
         }
 
-        // Initialize chat client when page loads
         document.addEventListener('DOMContentLoaded', () => {
             new ChatClient();
         });
     </script>
 </body>
-</html> 
+</html>
