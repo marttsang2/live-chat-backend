@@ -103,21 +103,6 @@
             50% { opacity: 0.5; }
             100% { opacity: 1; }
         }
-        .countdown-display {
-            margin-left: auto;
-            font-size: 14px;
-            font-weight: bold;
-            color: #ff6b6b;
-            min-width: 30px;
-            text-align: center;
-            transition: opacity 0.3s ease;
-        }
-        .countdown-display[style*="display: none"] {
-            opacity: 0;
-        }
-        .countdown-display[style*="display: block"] {
-            opacity: 1;
-        }
         .messages {
             flex: 1;
             overflow-y: auto;
@@ -242,9 +227,6 @@
             <div class="chat-header">
                 <div class="status-dot" id="statusDot"></div>
                 <h3 id="chatTitle">客服助理</h3>
-                <div class="countdown-display" id="countdownDisplay">
-                    <span id="countdownTimer">10</span>
-                </div>
             </div>
             <div id="messages" class="messages"></div>
             <div class="input-container">
@@ -265,16 +247,9 @@
                 this.chatContainer = document.getElementById('chatContainer');
                 this.statusDot = document.getElementById('statusDot');
                 this.chatTitle = document.getElementById('chatTitle');
-                this.countdownDisplay = document.getElementById('countdownDisplay');
-                this.countdownTimer = document.getElementById('countdownTimer');
                 this.loadingMessageElement = null;
                 this.isOpen = false;
-                this.idleTimeout = 10000; // 10 seconds total timeout
-                this.idleTimer = null;
-                this.countdownInterval = null;
                 this.isConnected = false;
-                this.isCountdownActive = false;
-                this.remainingIdleTime = this.idleTimeout / 1000; // Convert to seconds
 
                 this.init();
             }
@@ -283,71 +258,6 @@
                 this.setupEventListeners();
                 this.updateStatus(false);
                 this.connect(); // Initial connection attempt
-            }
-
-            startIdleTimer() {
-                if (this.idleTimer) {
-                    clearTimeout(this.idleTimer);
-                }
-
-                this.remainingIdleTime = this.idleTimeout / 1000; // Reset to 10 seconds
-                this.countdownTimer.textContent = Math.ceil(this.remainingIdleTime);
-                this.countdownDisplay.style.display = 'block'; // Ensure countdown is visible
-
-                this.idleTimer = setTimeout(() => {
-                    console.log('Idle timeout reached, starting countdown');
-                    this.startCountdown();
-                }, 500);
-            }
-
-            startCountdown() {
-                if (this.isCountdownActive) return;
-
-                this.isCountdownActive = true;
-                let countdownTime = 10; // 10 seconds countdown
-                this.countdownTimer.textContent = countdownTime;
-
-                this.countdownInterval = setInterval(() => {
-                    countdownTime--;
-                    this.countdownTimer.textContent = countdownTime;
-
-                    if (countdownTime <= 0) {
-                        this.executeDisconnect();
-                    }
-                }, 1000);
-            }
-
-            stopCountdown() {
-                if (!this.isCountdownActive) return;
-
-                this.isCountdownActive = false;
-                if (this.countdownInterval) {
-                    clearInterval(this.countdownInterval);
-                    this.countdownInterval = null;
-                }
-                this.countdownDisplay.style.display = 'none'; // Hide countdown when stopped
-            }
-
-            executeDisconnect() {
-                this.stopCountdown();
-                this.chatTitle.textContent = '已斷線';
-                console.log('Countdown reached zero, disconnecting WebSocket');
-                if (this.ws) {
-                    this.ws.close();
-                    this.ws = null; // Clear WebSocket reference
-                }
-                this.isConnected = false;
-                this.updateStatus(false);
-                this.messageInput.disabled = true;
-                this.sendButton.disabled = true;
-                this.addMessage('系統', '由於長時間無活動，連線已自動中斷', 'assistant');
-            }
-
-            updateLastActivity() {
-                if (this.isConnected) {
-                    this.stopCountdown();
-                    this.startIdleTimer(); // Restart idle timer
-                }
             }
 
             connect() {
@@ -368,7 +278,6 @@
                         this.messageInput.disabled = false;
                         this.sendButton.disabled = false;
                         this.addMessage('系統', '您好！我是客服助理，有什麼可以幫助您的嗎？', 'assistant');
-                        this.updateLastActivity();
                     };
 
                     this.ws.onmessage = (event) => {
@@ -378,7 +287,6 @@
                                 this.hideLoadingMessage();
                                 this.addMessage('客服助理', message.content, 'assistant');
                             }
-                            this.updateLastActivity();
                             setTimeout(() => {
                                 this.messageInput.focus();
                             }, 300);
@@ -396,8 +304,6 @@
                         this.chatTitle.textContent = '已斷線';
                         this.messageInput.disabled = true;
                         this.sendButton.disabled = true;
-                        this.stopCountdown();
-                        // No automatic reconnection here
                     };
 
                     this.ws.onerror = (error) => {
@@ -422,13 +328,11 @@
 
                 this.sendButton.addEventListener('click', () => {
                     this.sendMessage();
-                    this.updateLastActivity();
                 });
 
                 this.messageInput.addEventListener('keypress', (e) => {
                     if (e.key === 'Enter') {
                         this.sendMessage();
-                        this.updateLastActivity();
                     }
                 });
 
@@ -521,6 +425,14 @@
                 this.messageInput.disabled = !this.isConnected;
                 this.sendButton.disabled = !this.isConnected;
                 this.sendButton.classList.remove('loading');
+            }
+
+            updateLastActivity() {
+                // No-op: timer features have been disabled
+            }
+
+            stopCountdown() {
+                // No-op: timer features have been disabled
             }
         }
 
